@@ -13,17 +13,6 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories.streamlit import StreamlitChatMessageHistory
 
-import streamlit as st
-
-uploaded_file = st.file_uploader("파일을 업로드하세요")
-
-if uploaded_file is not None:
-    # 한글 파일명이 있어도 괜찮음
-    file_bytes = uploaded_file.read()
-    
-    # 파일 이름 사용은 지양 (경로 저장 시 문제됨)
-    # 대신 내용으로 처리
-    st.success(f"파일 업로드 완료: {uploaded_file.name}")
 
 # 🔐 OpenAI API Key 설정
 #os.environ["OPENAI_API_KEY"] = ""
