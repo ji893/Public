@@ -13,11 +13,6 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories.streamlit import StreamlitChatMessageHistory
 
-# ✅ 반드시 첫 번째 Streamlit 명령어
-st.set_page_config(page_title="PDF 업로드", layout="wide")
-
-st.title("PDF 업로드 테스트")
-
 uploaded_file = st.file_uploader("파일을 업로드하세요", type=["pdf"])
 
 if uploaded_file is not None:
@@ -26,14 +21,13 @@ if uploaded_file is not None:
         temp_file.write(uploaded_file.read())
         temp_file_path = temp_file.name
 
+    # temp_file_path를 사용하여 파일 처리
     st.success(f"파일이 성공적으로 업로드되었습니다: {uploaded_file.name}")
-
-    # 예: PDF 처리 함수
+    # 예: PDF 처리 함수 호출
     # process_pdf(temp_file_path)
 
+    # 처리 후 임시 파일 삭제
     os.remove(temp_file_path)
-
-
 
 # 🔐 OpenAI API Key 설정
 #os.environ["OPENAI_API_KEY"] = ""
