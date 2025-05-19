@@ -17,6 +17,12 @@ import streamlit as st
 import tempfile
 import os
 
+
+# ✅ 반드시 첫 번째 Streamlit 명령어로 설정
+st.set_page_config(page_title="PDF 업로드", layout="wide")
+
+st.title("PDF 업로드 테스트")
+
 uploaded_file = st.file_uploader("파일을 업로드하세요", type=["pdf"])
 
 if uploaded_file is not None:
@@ -27,6 +33,7 @@ if uploaded_file is not None:
 
     # temp_file_path를 사용하여 파일 처리
     st.success(f"파일이 성공적으로 업로드되었습니다: {uploaded_file.name}")
+    
     # 예: PDF 처리 함수 호출
     # process_pdf(temp_file_path)
 
