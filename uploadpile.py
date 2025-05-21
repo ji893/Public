@@ -1,6 +1,8 @@
 import os
 import tempfile
+import hashlib
 import streamlit as st
+from dotenv import load_dotenv
 
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -13,14 +15,12 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories.streamlit import StreamlitChatMessageHistory
 
 #  OpenAI API Key 설정
-#os.environ["OPENAI_API_KEY"] = ""
-
-from dotenv import load_dotenv
 load_dotenv()
 
 # Streamlit UI 구성
 st.set_page_config(page_title="파일 업로드 + 헌법 Q&A 챗봇", layout="centered")
-st.header("업로드된 문서 기반 Q&A 챗봇 ")
+                                                                            
+st.header(" 업로드된 문서 기반 Q&A 챗봇 ")
 
 # GPT 모델 선택
 selected_model = st.selectbox("사용할 GPT 모델을 선택하세요:", ("gpt-4o", "gpt-3.5-turbo-0125"))
@@ -28,8 +28,15 @@ selected_model = st.selectbox("사용할 GPT 모델을 선택하세요:", ("gpt-
 # PDF 업로드
 uploaded_file = st.file_uploader("📎 PDF 파일을 업로드하세요", type=["pdf"])
 
-#  PDF 로드 및 분할
-@st.cache_resource
+# 🔑 PDF 해시 생성 함수
+def get_file_hash(file) -> str:  
+    content = file.read()
+    file.seek(0) 
+    return hashlib.md5(content).hexdigest()
+
+# PDF 로드 및 분할
+
+@st.cache_resource 
 def load_and_split_pdf(file) -> list:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(file.read())
@@ -37,28 +44,36 @@ def load_and_split_pdf(file) -> list:
     loader = PyPDFLoader(tmp_file_path)
     return loader.load_and_split()
 
-#  FAISS 임베딩 벡터 생성
-@st.cache_resource
-def create_vectorstore(_docs):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    split_docs = text_splitter.split_documents(_docs)
-    for i, doc in enumerate(split_docs):
-        doc.metadata["source"] = f"{doc.metadata.get('source', '업로드 파일')} (p.{doc.metadata.get('page', 'n/a')})"
-    return FAISS.from_documents(split_docs, OpenAIEmbeddings(model="text-embedding-3-small"))
+# FAISS 저장/로드 통합 함수
+@st.cache_resource  
+def load_or_create_vectorstore(_docs, file_hash):  
+    index_path = os.path.join("faiss_index", file_hash) 
+    embedding_model = OpenAIEmbeddings(model="text-embedding-3-small")
 
-#  RAG 체인 구성
-def initialize_rag_chain(docs, selected_model):
-    vectorstore = create_vectorstore(docs)
+    if os.path.exists(index_path):  
+        return FAISS.load_local(index_path, embedding_model) 
+    # 없다면 새로 생성
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0) 
+    split_docs = text_splitter.split_documents(_docs)
+    for doc in split_docs:
+        doc.metadata["source"] = f"{doc.metadata.get('source', '업로드 파일')} (p.{doc.metadata.get('page', 'n/a')})" 
+    vectorstore = FAISS.from_documents(split_docs, embedding_model)
+
+    os.makedirs("faiss_index", exist_ok=True) 
+    vectorstore.save_local(index_path) 
+    return vectorstore
+
+# RAG 체인 구성
+def initialize_rag_chain(docs, file_hash, selected_model):
+    vectorstore = load_or_create_vectorstore(docs, file_hash)
     retriever = vectorstore.as_retriever()
 
-    # 질문 정제용 시스템 프롬프트
     contextualize_q_prompt = ChatPromptTemplate.from_messages([
         ("system", "Given a chat history and a new question, return a standalone version of the question."),
         MessagesPlaceholder("history"),
         ("human", "{input}")
     ])
 
-    # QA 시스템 프롬프트
     qa_prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an assistant for question-answering tasks. 
 Use the following pieces of retrieved context to answer the question. 
@@ -74,16 +89,19 @@ Use polite Korean and include emoji.\n\n{context}"""),
     rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
     return rag_chain
 
-# 대화 메시지 기록 초기화
+# 
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "업로드한 문서에 대해 궁금한 것을 질문해 주세요 "}]
+    st.session_state["messages"] = [{"role": "assistant", "content": "업로드한 문서에 대해 궁금한 것을 질문해 주세요 😊"}]
 
-# 파일 업로드 후 실행
+# 
 if uploaded_file:
-    with st.spinner("PDF 분석 중..."):
-        pages = load_and_split_pdf(uploaded_file)
-        rag_chain = initialize_rag_chain(pages, selected_model)
-
+    file_hash = get_file_hash(uploaded_file) 
+    
+    with st.spinner("PDF 분석 중..."): 
+        pages = load_and_split_pdf(uploaded_file) 
+        
+        rag_chain = initialize_rag_chain(pages, file_hash, selected_model)
+        
         chat_history = StreamlitChatMessageHistory(key="chat_messages")
         conversational_chain = RunnableWithMessageHistory(
             rag_chain,
@@ -93,11 +111,10 @@ if uploaded_file:
             output_messages_key="answer",
         )
 
-    # 이전 대화 출력
+
     for msg in chat_history.messages:
         st.chat_message(msg.type).write(msg.content)
 
-    # 사용자 질문 입력
     if prompt := st.chat_input("질문을 입력하세요"):
         st.chat_message("human").write(prompt)
         with st.chat_message("ai"):
@@ -107,9 +124,8 @@ if uploaded_file:
                 answer = response["answer"]
                 st.write(answer)
 
-                #  참고 문서 출력
                 with st.expander(" 참고한 문서 보기"):
                     for doc in response.get("context", []):
-                        st.markdown(f" {doc.metadata.get('source', '알 수 없음')}", help=doc.page_content)
+                        st.markdown(f"{doc.metadata.get('source', '알 수 없음')}", help=doc.page_content)
 
 
