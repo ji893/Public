@@ -1,10 +1,10 @@
 streamlit
-openai
 langchain
-langchain_community
-langchain_openai
-langchain_core
-langchain-chroma
+langchain-openai
+langchain-community
+openai
+
+sentence-transformers
+python-dotenv
 pypdf
-chromadb
 faiss-cpu
